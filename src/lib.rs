@@ -1,21 +1,66 @@
+use std::convert::TryInto;
+use std::fs::OpenOptions;
+use std::io::prelude::*;
+use std::path::Path;
+
 /// TGA format: http://www.gamers.org/dEngine/quake3/TGA.txt
 #[repr(packed)]
 pub struct TGAHeader {
-    id_length: u8,
-    color_map_type: u8,
-    image_type: u8,
-    color_map_origin: u16,
-    color_map_length: u16,
-    color_map_depth: u8,
-    x_origin: u16,
-    y_origin: u16,
-    width: u16,
-    height: u16,
-    bits_per_pixel: u8,
-    image_descriptor: u8,
+    pub id_length: u8,
+    pub color_map_type: u8,
+    pub image_type: u8,
+    pub color_map_origin: u16,
+    pub color_map_length: u16,
+    pub color_map_depth: u8,
+    pub x_origin: u16,
+    pub y_origin: u16,
+    pub width: u16,
+    pub height: u16,
+    pub bits_per_pixel: u8,
+    pub image_descriptor: u8,
 }
 
-#[derive(Copy, Clone)]
+fn push_le(v: &mut Vec<u8>, x: u16) {
+    v.push(x as u8);
+    v.push((x >> 8) as u8);
+}
+
+impl TGAHeader {
+    pub fn new() -> Self {
+        TGAHeader {
+            id_length: 0,
+            color_map_type: 0,
+            image_type: 0,
+            color_map_origin: 0,
+            color_map_length: 0,
+            color_map_depth: 0,
+            x_origin: 0,
+            y_origin: 0,
+            width: 0,
+            height: 0,
+            bits_per_pixel: 0,
+            image_descriptor: 0,
+        }
+    }
+    pub fn raw(&self) -> Vec<u8> {
+        let mut ret = Vec::new();
+        ret.push(self.id_length);
+        ret.push(self.color_map_type);
+        ret.push(self.image_type);
+        push_le(&mut ret, self.color_map_origin);
+        push_le(&mut ret, self.color_map_length);
+        ret.push(self.color_map_depth);
+        push_le(&mut ret, self.x_origin);
+        push_le(&mut ret, self.y_origin);
+        push_le(&mut ret, self.width);
+        push_le(&mut ret, self.height);
+        ret.push(self.bits_per_pixel);
+        ret.push(self.image_descriptor);
+        ret
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum TGAColor {
     Rgb(TGAColorRGB),
     Rgba(TGAColorRGBA),
@@ -30,14 +75,14 @@ impl TGAColor {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TGAColorRGB {
     r: u8,
     g: u8,
     b: u8,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TGAColorRGBA {
     r: u8,
     g: u8,
@@ -55,11 +100,8 @@ pub struct TGAImage {
 }
 
 impl TGAImage {
-    pub fn new<T: Into<usize>>(w: T, h: T, bpp: T) -> Self {
+    pub fn new(w: usize, h: usize, bpp: usize) -> Self {
         let mut data = Vec::new();
-        let w = w.into();
-        let h = h.into();
-        let bpp = bpp.into();
         for _ in 0..w * h * bpp {
             data.push(0);
         }
@@ -71,9 +113,15 @@ impl TGAImage {
         }
     }
 
-    pub fn set<T: Into<usize>>(&mut self, x: T, y: T, c: &TGAColor) -> bool {
-        let x = x.into();
-        let y = y.into();
+    pub fn width(&self) -> usize {
+        self.w
+    }
+
+    pub fn height(&self) -> usize {
+        self.h
+    }
+
+    pub fn set(&mut self, x: usize, y: usize, c: &TGAColor) -> bool {
         if x >= self.w || y >= self.h {
             return false;
         }
@@ -84,17 +132,17 @@ impl TGAImage {
                 if self.bytespp != 3 {
                     return false;
                 }
-                self.data[idx] = rgb.r;
+                self.data[idx] = rgb.b;
                 self.data[idx + 1] = rgb.g;
-                self.data[idx + 2] = rgb.b;
+                self.data[idx + 2] = rgb.r;
             }
             TGAColor::Rgba(rgba) => {
                 if self.bytespp != 4 {
                     return false;
                 }
-                self.data[idx] = rgba.r;
+                self.data[idx] = rgba.b;
                 self.data[idx + 1] = rgba.g;
-                self.data[idx + 2] = rgba.b;
+                self.data[idx + 2] = rgba.r;
                 self.data[idx + 3] = rgba.a;
             }
         }
@@ -140,6 +188,37 @@ impl TGAImage {
                 self.set(i, self.h - 1 - j, &c1);
             }
         }
+        true
+    }
+
+    pub fn write_tga_file<P: AsRef<Path>>(&self, filename: P) -> bool {
+        let developer_area = vec![0, 0, 0, 0];
+        let extension_area = vec![0, 0, 0, 0];
+        let footer = vec![
+            'T' as u8, 'R' as u8, 'U' as u8, 'E' as u8, 'V' as u8, 'I' as u8, 'S' as u8, 'I' as u8,
+            'O' as u8, 'N' as u8, '-' as u8, 'X' as u8, 'F' as u8, 'I' as u8, 'L' as u8, 'E' as u8,
+            '.' as u8, '\0' as u8,
+        ];
+
+        let mut f = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(filename.as_ref())
+            .expect("cannot open output file");
+
+        let mut header = TGAHeader::new();
+        header.bits_per_pixel = (self.bytespp << 3).try_into().unwrap();
+        header.width = self.w as u16;
+        header.height = self.h as u16;
+        header.image_type = 2;
+        header.image_descriptor = 0x20; // top-left origin
+        f.write_all(&header.raw()).expect("write header error");
+        f.write_all(&self.data).expect("write body error");
+        f.write_all(&developer_area)
+            .expect("write developer area error");
+        f.write_all(&extension_area)
+            .expect("write extension area error");
+        f.write_all(&footer).expect("write footer error");
         true
     }
 }
