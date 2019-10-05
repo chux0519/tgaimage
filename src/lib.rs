@@ -191,7 +191,7 @@ impl TGAImage {
         true
     }
 
-    pub fn write_tga_file<P: AsRef<Path>>(&self, filename: P) -> bool {
+    pub fn write_tga_file<P: AsRef<Path>>(&self, filename: P, rle: bool) -> bool {
         let developer_area = vec![0, 0, 0, 0];
         let extension_area = vec![0, 0, 0, 0];
         let footer = vec![
@@ -203,6 +203,7 @@ impl TGAImage {
         let mut f = OpenOptions::new()
             .create(true)
             .write(true)
+            .truncate(true)
             .open(filename.as_ref())
             .expect("cannot open output file");
 
@@ -210,15 +211,57 @@ impl TGAImage {
         header.bits_per_pixel = (self.bytespp << 3).try_into().unwrap();
         header.width = self.w as u16;
         header.height = self.h as u16;
-        header.image_type = 2;
+        header.image_type = if rle { 10 } else { 2 };
         header.image_descriptor = 0x20; // top-left origin
         f.write_all(&header.raw()).expect("write header error");
-        f.write_all(&self.data).expect("write body error");
+        if rle {
+            self.write_rle_data(&mut f);
+        } else {
+            f.write_all(&self.data).expect("write body error");
+        }
         f.write_all(&developer_area)
             .expect("write developer area error");
         f.write_all(&extension_area)
             .expect("write extension area error");
         f.write_all(&footer).expect("write footer error");
         true
+    }
+
+    fn write_rle_data<W: Write>(&self, writer: &mut W) {
+        let max_chunk_length = 128;
+        let mut cur_byte = 0;
+        loop {
+            if cur_byte >= self.w * self.h {
+                break;
+            }
+            let mut run_length = 1;
+            'inner: for cl in 0..max_chunk_length - 1 {
+                for t in 0..self.bytespp {
+                    if cur_byte + cl >= (self.w * self.h - 1) {
+                        break 'inner;
+                    }
+                    if self.data[(cur_byte + cl) * self.bytespp + t]
+                        != self.data[(cur_byte + cl) * self.bytespp + t + self.bytespp]
+                    {
+                        // should be raw, or end rle
+                        break 'inner;
+                    }
+                }
+                run_length += 1;
+            }
+            if run_length == 1 {
+                // raw
+                writer.write(&[0]).unwrap();
+            } else {
+                // end of rle
+                let rl_byte = 128 + (run_length - 1);
+                writer.write(&[rl_byte as u8]).unwrap();
+            }
+            writer
+                .write(&self.data[cur_byte * self.bytespp..(cur_byte + 1) * self.bytespp])
+                .unwrap();
+
+            cur_byte += run_length;
+        }
     }
 }
