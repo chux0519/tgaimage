@@ -25,6 +25,10 @@ fn push_le(v: &mut Vec<u8>, x: u16) {
     v.push((x >> 8) as u8);
 }
 
+fn from_le(lo: u8, hi: u8) -> u16 {
+    (hi as u16) << 8 | lo as u16
+}
+
 impl TGAHeader {
     pub fn new() -> Self {
         TGAHeader {
@@ -41,6 +45,30 @@ impl TGAHeader {
             bits_per_pixel: 0,
             image_descriptor: 0,
         }
+    }
+
+    pub fn from_reader<R: Read>(reader: &mut R) -> Self {
+        let mut buf = vec![0u8; std::mem::size_of::<Self>()];
+        reader.read_exact(&mut buf).unwrap();
+        TGAHeader::from_buf(&buf)
+    }
+
+    pub fn from_buf(buf: &Vec<u8>) -> Self {
+        assert_eq!(buf.len(), std::mem::size_of::<Self>());
+        let mut header = TGAHeader::new();
+        header.id_length = buf[0];
+        header.color_map_type = buf[1];
+        header.image_type = buf[2];
+        header.color_map_origin = from_le(buf[3], buf[4]);
+        header.color_map_length = from_le(buf[5], buf[6]);
+        header.color_map_depth = buf[7];
+        header.x_origin = from_le(buf[8], buf[9]);
+        header.y_origin = from_le(buf[10], buf[11]);
+        header.width = from_le(buf[12], buf[13]);
+        header.height = from_le(buf[14], buf[15]);
+        header.bits_per_pixel = buf[16];
+        header.image_descriptor = buf[17];
+        header
     }
     pub fn raw(&self) -> Vec<u8> {
         let mut ret = Vec::new();
@@ -92,6 +120,7 @@ pub struct TGAColorRGBA {
 
 #[derive(Clone)]
 pub struct TGAImage {
+    // store (b,g,r,a)
     data: Vec<u8>,
     w: usize,
     h: usize,
@@ -149,16 +178,14 @@ impl TGAImage {
         true
     }
 
-    pub fn get<T: Into<usize>>(&self, x: T, y: T) -> TGAColor {
-        let x = x.into();
-        let y = y.into();
+    pub fn get(&self, x: usize, y: usize) -> TGAColor {
         let idx = (x + y * self.w) * self.bytespp;
         match self.bytespp {
-            3 => TGAColor::rgb(self.data[idx], self.data[idx + 1], self.data[idx + 2]),
+            3 => TGAColor::rgb(self.data[idx + 2], self.data[idx + 1], self.data[idx]),
             4 => TGAColor::rgba(
-                self.data[idx],
-                self.data[idx + 1],
                 self.data[idx + 2],
+                self.data[idx + 1],
+                self.data[idx],
                 self.data[idx + 3],
             ),
             _ => unreachable!(),
@@ -189,6 +216,24 @@ impl TGAImage {
             }
         }
         true
+    }
+
+    pub fn from_tga_file<P: AsRef<Path>>(filename: P) -> Self {
+        let mut img = TGAImage::new(0, 0, 3);
+        let mut f = OpenOptions::new()
+            .read(true)
+            .open(filename.as_ref())
+            .expect("cannot open file");
+        let header = TGAHeader::from_reader(&mut f);
+        img.w = header.width as usize;
+        img.h = header.height as usize;
+        img.bytespp = header.bits_per_pixel as usize >> 3;
+        img.data = Vec::with_capacity(img.w * img.h * img.bytespp);
+        for _ in 0..img.w * img.h * img.bytespp {
+            img.data.push(0);
+        }
+        img.load_data(&mut f, &header);
+        img
     }
 
     pub fn write_tga_file<P: AsRef<Path>>(&self, filename: P, rle: bool) -> bool {
@@ -225,6 +270,67 @@ impl TGAImage {
             .expect("write extension area error");
         f.write_all(&footer).expect("write footer error");
         true
+    }
+
+    fn load_data<R: Read>(&mut self, reader: &mut R, header: &TGAHeader) {
+        match header.image_type {
+            2 => {
+                // true color
+                reader.read_exact(&mut self.data).unwrap();
+            }
+            10 => {
+                // rle true color
+                self.load_rle_data(reader);
+            }
+            _ => unimplemented!(),
+        }
+        // use top left coordinates system
+        match header.image_descriptor >> 4 {
+            0 => {
+                self.flip_vertically();
+            }
+            1 => {
+                self.flip_vertically();
+                self.flip_horizontally();
+            }
+            2 => {}
+            3 => {
+                self.flip_horizontally();
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn load_rle_data<R: Read>(&mut self, reader: &mut R) {
+        let mut cur_byte = 0;
+        loop {
+            if cur_byte >= self.w * self.h * self.bytespp {
+                break;
+            }
+            let mut packet = vec![0];
+            reader.read_exact(&mut packet).unwrap();
+
+            if packet[0] >> 7 == 1 {
+                // rle
+                let count = packet[0] - 128 + 1;
+                let mut color = vec![0; self.bytespp];
+                reader.read_exact(&mut color).unwrap();
+                for _ in 0..count {
+                    for t in 0..self.bytespp {
+                        self.data[cur_byte] = color[t];
+                        cur_byte += 1;
+                    }
+                }
+            } else {
+                // raw
+                let count = packet[0] + 1;
+                let len = count as usize * self.bytespp;
+                reader
+                    .read_exact(&mut self.data[cur_byte..cur_byte + len])
+                    .unwrap();
+                cur_byte += len;
+            };
+        }
     }
 
     fn write_rle_data<W: Write>(&self, writer: &mut W) {

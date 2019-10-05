@@ -10,4 +10,16 @@ fn main() {
     }
 
     image.write_tga_file("out.tga", true);
+
+    let img = TGAImage::from_tga_file("out.tga");
+    println!(
+        "{} by {}, color of (0,0) : {:?}, (0, h): {:?}, (w, 0): {:?}, (w, h): {:?}",
+        img.width(),
+        img.height(),
+        img.get(0, 0),
+        img.get(0, img.height() - 1),
+        img.get(img.width() - 1, 0),
+        img.get(img.width() - 1, img.height() - 1),
+    );
+    img.write_tga_file("out_non_rle.tga", false);
 }
