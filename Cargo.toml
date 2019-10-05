@@ -3,6 +3,9 @@ name = "tgaimage"
 version = "0.1.0"
 authors = ["chux0519 <chuxdesign@hotmail.com>"]
 edition = "2018"
+description = "simple encoder/decoder for tga format."
+license = "CC0-1.0"
+readme="README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
