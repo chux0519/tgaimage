@@ -5,6 +5,7 @@ use std::path::Path;
 
 /// TGA format: http://www.gamers.org/dEngine/quake3/TGA.txt
 #[repr(packed)]
+#[derive(Default)]
 pub struct TGAHeader {
     pub id_length: u8,
     pub color_map_type: u8,
@@ -31,20 +32,7 @@ fn from_le(lo: u8, hi: u8) -> u16 {
 
 impl TGAHeader {
     pub fn new() -> Self {
-        TGAHeader {
-            id_length: 0,
-            color_map_type: 0,
-            image_type: 0,
-            color_map_origin: 0,
-            color_map_length: 0,
-            color_map_depth: 0,
-            x_origin: 0,
-            y_origin: 0,
-            width: 0,
-            height: 0,
-            bits_per_pixel: 0,
-            image_descriptor: 0,
-        }
+        Self::default()
     }
 
     pub fn from_reader<R: Read>(reader: &mut R) -> Self {
