@@ -26,10 +26,6 @@ fn push_le(v: &mut Vec<u8>, x: u16) {
     v.push((x >> 8) as u8);
 }
 
-fn from_le(lo: u8, hi: u8) -> u16 {
-    (hi as u16) << 8 | lo as u16
-}
-
 impl TGAHeader {
     pub fn new() -> Self {
         Self::default()
@@ -47,13 +43,13 @@ impl TGAHeader {
         header.id_length = buf[0];
         header.color_map_type = buf[1];
         header.image_type = buf[2];
-        header.color_map_origin = from_le(buf[3], buf[4]);
-        header.color_map_length = from_le(buf[5], buf[6]);
+        header.color_map_origin = u16::from_le_bytes(buf[3..=4].try_into().unwrap());
+        header.color_map_length = u16::from_le_bytes(buf[5..=6].try_into().unwrap());
         header.color_map_depth = buf[7];
-        header.x_origin = from_le(buf[8], buf[9]);
-        header.y_origin = from_le(buf[10], buf[11]);
-        header.width = from_le(buf[12], buf[13]);
-        header.height = from_le(buf[14], buf[15]);
+        header.x_origin = u16::from_le_bytes(buf[8..=9].try_into().unwrap());
+        header.y_origin = u16::from_le_bytes(buf[10..=11].try_into().unwrap());
+        header.width = u16::from_le_bytes(buf[12..=13].try_into().unwrap());
+        header.height = u16::from_le_bytes(buf[14..=15].try_into().unwrap());
         header.bits_per_pixel = buf[16];
         header.image_descriptor = buf[17];
         header
