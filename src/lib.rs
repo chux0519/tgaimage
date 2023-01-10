@@ -5,6 +5,7 @@ use std::path::Path;
 
 /// TGA format: http://www.gamers.org/dEngine/quake3/TGA.txt
 #[repr(packed)]
+#[derive(Default)]
 pub struct TGAHeader {
     pub id_length: u8,
     pub color_map_type: u8,
@@ -25,26 +26,9 @@ fn push_le(v: &mut Vec<u8>, x: u16) {
     v.push((x >> 8) as u8);
 }
 
-fn from_le(lo: u8, hi: u8) -> u16 {
-    (hi as u16) << 8 | lo as u16
-}
-
 impl TGAHeader {
     pub fn new() -> Self {
-        TGAHeader {
-            id_length: 0,
-            color_map_type: 0,
-            image_type: 0,
-            color_map_origin: 0,
-            color_map_length: 0,
-            color_map_depth: 0,
-            x_origin: 0,
-            y_origin: 0,
-            width: 0,
-            height: 0,
-            bits_per_pixel: 0,
-            image_descriptor: 0,
-        }
+        Self::default()
     }
 
     pub fn from_reader<R: Read>(reader: &mut R) -> Self {
@@ -59,13 +43,13 @@ impl TGAHeader {
         header.id_length = buf[0];
         header.color_map_type = buf[1];
         header.image_type = buf[2];
-        header.color_map_origin = from_le(buf[3], buf[4]);
-        header.color_map_length = from_le(buf[5], buf[6]);
+        header.color_map_origin = u16::from_le_bytes(buf[3..=4].try_into().unwrap());
+        header.color_map_length = u16::from_le_bytes(buf[5..=6].try_into().unwrap());
         header.color_map_depth = buf[7];
-        header.x_origin = from_le(buf[8], buf[9]);
-        header.y_origin = from_le(buf[10], buf[11]);
-        header.width = from_le(buf[12], buf[13]);
-        header.height = from_le(buf[14], buf[15]);
+        header.x_origin = u16::from_le_bytes(buf[8..=9].try_into().unwrap());
+        header.y_origin = u16::from_le_bytes(buf[10..=11].try_into().unwrap());
+        header.width = u16::from_le_bytes(buf[12..=13].try_into().unwrap());
+        header.height = u16::from_le_bytes(buf[14..=15].try_into().unwrap());
         header.bits_per_pixel = buf[16];
         header.image_descriptor = buf[17];
         header
@@ -130,12 +114,8 @@ pub struct TGAImage {
 
 impl TGAImage {
     pub fn new(w: usize, h: usize, bpp: usize) -> Self {
-        let mut data = Vec::new();
-        for _ in 0..w * h * bpp {
-            data.push(0);
-        }
         TGAImage {
-            data,
+            data: vec![0; w * h * bpp],
             w,
             h,
             bytespp: bpp,
@@ -239,11 +219,7 @@ impl TGAImage {
     pub fn write_tga_file<P: AsRef<Path>>(&self, filename: P, rle: bool) -> bool {
         let developer_area = vec![0, 0, 0, 0];
         let extension_area = vec![0, 0, 0, 0];
-        let footer = vec![
-            'T' as u8, 'R' as u8, 'U' as u8, 'E' as u8, 'V' as u8, 'I' as u8, 'S' as u8, 'I' as u8,
-            'O' as u8, 'N' as u8, '-' as u8, 'X' as u8, 'F' as u8, 'I' as u8, 'L' as u8, 'E' as u8,
-            '.' as u8, '\0' as u8,
-        ];
+        let footer = b"TRUEVISION-XFILE.\0";
 
         let mut f = OpenOptions::new()
             .create(true)
@@ -268,7 +244,7 @@ impl TGAImage {
             .expect("write developer area error");
         f.write_all(&extension_area)
             .expect("write extension area error");
-        f.write_all(&footer).expect("write footer error");
+        f.write_all(footer).expect("write footer error");
         true
     }
 
@@ -307,7 +283,7 @@ impl TGAImage {
             if cur_byte >= self.w * self.h * self.bytespp {
                 break;
             }
-            let mut packet = vec![0];
+            let mut packet = [0];
             reader.read_exact(&mut packet).unwrap();
 
             if packet[0] >> 7 == 1 {
@@ -316,8 +292,8 @@ impl TGAImage {
                 let mut color = vec![0; self.bytespp];
                 reader.read_exact(&mut color).unwrap();
                 for _ in 0..count {
-                    for t in 0..self.bytespp {
-                        self.data[cur_byte] = color[t];
+                    for &col in color.iter().take(self.bytespp) {
+                        self.data[cur_byte] = col;
                         cur_byte += 1;
                     }
                 }
@@ -357,14 +333,14 @@ impl TGAImage {
             }
             if run_length == 1 {
                 // raw
-                writer.write(&[0]).unwrap();
+                writer.write_all(&[0]).unwrap();
             } else {
                 // end of rle
                 let rl_byte = 128 + (run_length - 1);
-                writer.write(&[rl_byte as u8]).unwrap();
+                writer.write_all(&[rl_byte as u8]).unwrap();
             }
             writer
-                .write(&self.data[cur_byte * self.bytespp..(cur_byte + 1) * self.bytespp])
+                .write_all(&self.data[cur_byte * self.bytespp..(cur_byte + 1) * self.bytespp])
                 .unwrap();
 
             cur_byte += run_length;
