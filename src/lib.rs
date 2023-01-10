@@ -235,11 +235,7 @@ impl TGAImage {
     pub fn write_tga_file<P: AsRef<Path>>(&self, filename: P, rle: bool) -> bool {
         let developer_area = vec![0, 0, 0, 0];
         let extension_area = vec![0, 0, 0, 0];
-        let footer = vec![
-            'T' as u8, 'R' as u8, 'U' as u8, 'E' as u8, 'V' as u8, 'I' as u8, 'S' as u8, 'I' as u8,
-            'O' as u8, 'N' as u8, '-' as u8, 'X' as u8, 'F' as u8, 'I' as u8, 'L' as u8, 'E' as u8,
-            '.' as u8, '\0' as u8,
-        ];
+        let footer = b"TRUEVISION-XFILE.\0";
 
         let mut f = OpenOptions::new()
             .create(true)
@@ -264,7 +260,7 @@ impl TGAImage {
             .expect("write developer area error");
         f.write_all(&extension_area)
             .expect("write extension area error");
-        f.write_all(&footer).expect("write footer error");
+        f.write_all(footer).expect("write footer error");
         true
     }
 
