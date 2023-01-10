@@ -299,7 +299,7 @@ impl TGAImage {
             if cur_byte >= self.w * self.h * self.bytespp {
                 break;
             }
-            let mut packet = vec![0];
+            let mut packet = [0];
             reader.read_exact(&mut packet).unwrap();
 
             if packet[0] >> 7 == 1 {
