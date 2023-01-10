@@ -353,14 +353,14 @@ impl TGAImage {
             }
             if run_length == 1 {
                 // raw
-                writer.write(&[0]).unwrap();
+                writer.write_all(&[0]).unwrap();
             } else {
                 // end of rle
                 let rl_byte = 128 + (run_length - 1);
-                writer.write(&[rl_byte as u8]).unwrap();
+                writer.write_all(&[rl_byte as u8]).unwrap();
             }
             writer
-                .write(&self.data[cur_byte * self.bytespp..(cur_byte + 1) * self.bytespp])
+                .write_all(&self.data[cur_byte * self.bytespp..(cur_byte + 1) * self.bytespp])
                 .unwrap();
 
             cur_byte += run_length;
