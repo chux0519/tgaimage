@@ -130,12 +130,8 @@ pub struct TGAImage {
 
 impl TGAImage {
     pub fn new(w: usize, h: usize, bpp: usize) -> Self {
-        let mut data = Vec::new();
-        for _ in 0..w * h * bpp {
-            data.push(0);
-        }
         TGAImage {
-            data,
+            data: vec![0; w * h * bpp],
             w,
             h,
             bytespp: bpp,
