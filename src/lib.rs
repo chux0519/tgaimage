@@ -308,8 +308,8 @@ impl TGAImage {
                 let mut color = vec![0; self.bytespp];
                 reader.read_exact(&mut color).unwrap();
                 for _ in 0..count {
-                    for t in 0..self.bytespp {
-                        self.data[cur_byte] = color[t];
+                    for &col in color.iter().take(self.bytespp) {
+                        self.data[cur_byte] = col;
                         cur_byte += 1;
                     }
                 }
